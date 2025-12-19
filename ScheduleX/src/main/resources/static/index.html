@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Retry & Order Management System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+        }
+
+        .pulse {
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .stat-icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .stat-number {
+            font-size: 3em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.95em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .total { color: #3b82f6; }
+        .pending { color: #f59e0b; }
+        .failed { color: #ef4444; }
+        .success { color: #10b981; }
+        .revenue { color: #8b5cf6; }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 32px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .order-card {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .order-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .order-id {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #1f2937;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .order-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+        }
+
+        .detail-item {
+            color: #6b7280;
+        }
+
+        .detail-item strong {
+            color: #1f2937;
+        }
+
+        .retry-info {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .retry-info strong {
+            color: #92400e;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-retry {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-retry:hover {
+            background: #2563eb;
+        }
+
+        .btn-view {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-view:hover {
+            background: #4b5563;
+        }
+
+        .message {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 2px solid #10b981;
+        }
+
+        .message.error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 2px solid #ef4444;
+        }
+
+        .message.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .section-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: #f3f4f6;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .tab:hover:not(.active) {
+            background: #e5e7eb;
+        }
+
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1>💰 Payment Retry System</h1>
+                <p class="subtitle">Automated Order & Payment Management</p>
+            </div>
+            <div class="live-indicator">
+                <div class="pulse"></div>
+                <span>LIVE</span>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📦</div>
+                <div class="stat-number total" id="totalOrders">0</div>
+                <div class="stat-label">Total Orders</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏳</div>
+                <div class="stat-number pending" id="pendingOrders">0</div>
+                <div class="stat-label">Pending Payment</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">❌</div>
+                <div class="stat-number failed" id="failedOrders">0</div>
+                <div class="stat-label">Failed (Retrying)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-number success" id="successOrders">0</div>
+                <div class="stat-label">Successful</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">💵</div>
+                <div class="stat-number revenue" id="totalRevenue">₹0</div>
+                <div class="stat-label">Revenue</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card">
+                <h2>🛒 Create New Order</h2>
+                <div id="formMessage" class="message"></div>
+                <form id="orderForm">
+                    <div class="form-group">
+                        <label>Order ID *</label>
+                        <input type="text" id="orderId" required placeholder="ORD_12345">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Customer Name *</label>
+                        <input type="text" id="customerName" required placeholder="John Doe">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Email *</label>
+                        <input type="email" id="customerEmail" required placeholder="john@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Phone *</label>
+                        <input type="tel" id="customerPhone" required placeholder="+91-9876543210">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Amount (₹) *</label>
+                        <input type="number" id="amount" required placeholder="12990" step="0.01">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Product</label>
+                        <input type="text" id="product" placeholder="iPhone 15 Pro">
+                    </div>
+
+                    <button type="submit" class="btn">Create Order & Process Payment</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">📋 Orders</h2>
+                    <button class="btn-small btn-retry" onclick="loadOrders()">🔄 Refresh</button>
+                </div>
+
+                <div class="section-tabs">
+                    <button class="tab active" onclick="filterOrders('all')">All Orders</button>
+                    <button class="tab" onclick="filterOrders('FAILED')">Failed</button>
+                    <button class="tab" onclick="filterOrders('SUCCESS')">Paid</button>
+                </div>
+
+                <div id="ordersContainer">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📦</div>
+                        <p>No orders yet. Create your first order!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080/api/orders';
+        let allOrders = [];
+        let currentFilter = 'all';
+
+        // Generate random order ID
+        function generateOrderId() {
+            return 'ORD_' + Math.floor(Math.random() * 100000);
+        }
+
+        // Set random order ID on load
+        document.getElementById('orderId').value = generateOrderId();
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const [statsResponse, ordersResponse] = await Promise.all([
+                    fetch(`${API_URL}/stats`),
+                    fetch(API_URL)
+                ]);
+                
+                const stats = await statsResponse.json();
+                const orders = await ordersResponse.json();
+                
+                document.getElementById('totalOrders').textContent = stats.totalOrders || 0;
+                document.getElementById('pendingOrders').textContent = stats.pendingPayments || 0;
+                document.getElementById('failedOrders').textContent = stats.failedPayments || 0;
+                document.getElementById('successOrders').textContent = stats.successfulPayments || 0;
+                
+                // Calculate revenue from successful orders
+                const revenue = orders
+                    .filter(o => o.paymentStatus === 'SUCCESS')
+                    .reduce((sum, o) => sum + o.amount, 0);
+                document.getElementById('totalRevenue').textContent = 
+                    '₹' + revenue.toLocaleString('en-IN');
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load orders
+        async function loadOrders() {
+            try {
+                const response = await fetch(API_URL);
+                allOrders = await response.json();
+                
+                // Sort by creation time (newest first)
+                allOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                
+                displayOrders();
+            } catch (error) {
+                console.error('Error loading orders:', error);
+            }
+        }
+
+        // Filter orders
+        function filterOrders(filter) {
+            currentFilter = filter;
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            displayOrders();
+        }
+
+        // Display orders
+        function displayOrders() {
+            const container = document.getElementById('ordersContainer');
+            
+            let filteredOrders = allOrders;
+            if (currentFilter !== 'all') {
+                filteredOrders = allOrders.filter(o => o.paymentStatus === currentFilter);
+            }
+            
+            if (filteredOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📦</div>
+                        <p>No orders in this category</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filteredOrders.map(order => {
+                const statusClass = order.paymentStatus === 'SUCCESS' ? 'status-success' : 
+                                  order.paymentStatus === 'FAILED' ? 'status-failed' : 
+                                  'status-pending';
+                
+                let retryInfo = '';
+                if (order.paymentStatus === 'FAILED' && order.nextRetryTime) {
+                    const retryTime = new Date(order.nextRetryTime);
+                    const now = new Date();
+                    const diff = retryTime - now;
+                    const hours = Math.floor(diff / (1000 * 60 * 60));
+                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    retryInfo = `
+                        <div class="retry-info">
+                            <strong>🔄 Auto-Retry Scheduled:</strong> In ${hours}h ${minutes}m 
+                            (Attempt ${order.retryCount + 1}/${order.maxRetries})
+                            <br><strong>Reason:</strong> ${order.failureReason || 'Payment failed'}
+                        </div>
+                    `;
+                }
+                
+                return `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <div class="order-id">${order.orderId}</div>
+                            <span class="status-badge ${statusClass}">${order.paymentStatus}</span>
+                        </div>
+                        <div class="order-details">
+                            <div class="detail-item"><strong>Customer:</strong> ${order.customerName}</div>
+                            <div class="detail-item"><strong>Amount:</strong> ₹${order.amount.toLocaleString('en-IN')}</div>
+                            <div class="detail-item"><strong>Email:</strong> ${order.customerEmail}</div>
+                            <div class="detail-item"><strong>Phone:</strong> ${order.customerPhone}</div>
+                            <div class="detail-item"><strong>Created:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
+                            <div class="detail-item"><strong>Status:</strong> ${order.orderStatus}</div>
+                        </div>
+                        ${retryInfo}
+                        <div class="action-buttons">
+                            ${order.paymentStatus === 'FAILED' ? 
+                                `<button class="btn-small btn-retry" onclick="retryPayment('${order.orderId}')">
+                                    🔄 Retry Now
+                                </button>` : ''}
+                            <button class="btn-small btn-view" onclick="viewTransactions('${order.orderId}')">
+                                📊 View Transactions
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Create order
+        document.getElementById('orderForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formMessage = document.getElementById('formMessage');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            
+            const product = document.getElementById('product').value || 'Product';
+            const amount = parseFloat(document.getElementById('amount').value);
+            
+            const order = {
+                orderId: document.getElementById('orderId').value,
+                customerId: 'CUST_' + Math.floor(Math.random() * 1000),
+                customerName: document.getElementById('customerName').value,
+                customerEmail: document.getElementById('customerEmail').value,
+                customerPhone: document.getElementById('customerPhone').value,
+                amount: amount,
+                orderItems: JSON.stringify([{product: product, qty: 1, price: amount}]),
+                maxRetries: 3
+            };
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(order)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    formMessage.className = 'message success show';
+                    if (result.paymentStatus === 'SUCCESS') {
+                        formMessage.textContent = '✅ Order created & Payment successful!';
+                    } else {
+                        formMessage.textContent = '⚠️ Order created but payment failed. Auto-retry scheduled.';
+                    }
+                    
+                    // Reset form
+                    document.getElementById('orderForm').reset();
+                    document.getElementById('orderId').value = generateOrderId();
+                    
+                    // Reload data
+                    loadStats();
+                    loadOrders();
+                    
+                    setTimeout(() => formMessage.className = 'message', 5000);
+                } else {
+                    throw new Error('Failed to create order');
+                }
+            } catch (error) {
+                formMessage.className = 'message error show';
+                formMessage.textContent = '❌ Error: ' + error.message;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Order & Process Payment';
+            }
+        });
+
+        // Retry payment
+        async function retryPayment(orderId) {
+            if (!confirm(`Retry payment for ${orderId}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/${orderId}/retry`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert('✅ Payment retry initiated!');
+                    setTimeout(() => {
+                        loadStats();
+                        loadOrders();
+                    }, 2500);
+                }
+            } catch (error) {
+                alert('❌ Retry failed: ' + error.message);
+            }
+        }
+
+        // View transactions
+        async function viewTransactions(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/${orderId}/transactions`);
+                const transactions = await response.json();
+                
+                let message = `Payment Transactions for ${orderId}:\n\n`;
+                transactions.forEach((t, i) => {
+                    message += `Attempt ${t.attemptNumber}: ${t.status}\n`;
+                    message += `Amount: ₹${t.amount}\n`;
+                    message += `Time: ${new Date(t.attemptedAt).toLocaleString()}\n`;
+                    if (t.errorMessage) message += `Error: ${t.errorMessage}\n`;
+                    message += '\n';
+                });
+                
+                alert(message);
+            } catch (error) {
+                alert('Error loading transactions');
+            }
+        }
+
+        // Initialize
+        loadStats();
+        loadOrders();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(() => {
+            loadStats();
+            loadOrders();
+        }, 5000);
+    </script>
+</body>
+</html>

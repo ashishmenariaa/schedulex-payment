@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ScheduleX Dashboard</title>
+  <style>
+    body { font-family: Arial; background:#111; color:#eee; }
+    table { width:100%; border-collapse: collapse; margin-top:20px; }
+    th, td { border:1px solid #444; padding:8px; text-align:center; }
+    th { background:#222; }
+    .PENDING { color: orange; }
+    .RUNNING { color: yellow; }
+    .COMPLETED { color: lightgreen; }
+    .FAILED { color: red; }
+  </style>
+</head>
+<body>
+
+<h2>🚀 ScheduleX Job Dashboard</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Scheduled Time</th>
+      <th>Retries</th>
+    </tr>
+  </thead>
+  <tbody id="jobs"></tbody>
+</table>
+
+<script>
+async function loadJobs() {
+  const res = await fetch("http://localhost:8080/api/jobs");
+  const jobs = await res.json();
+  const tbody = document.getElementById("jobs");
+  tbody.innerHTML = "";
+  jobs.forEach(j => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${j.id}</td>
+        <td>${j.jobName}</td>
+        <td class="${j.status}">${j.status}</td>
+        <td>${j.scheduledTime}</td>
+        <td>${j.retryCount}/${j.maxRetries}</td>
+      </tr>`;
+  });
+}
+setInterval(loadJobs, 5000);
+loadJobs();
+</script>
+
+</body>
+</html>
