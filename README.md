@@ -1,277 +1,120 @@
-# 💰 Payment Retry & Order Management System
+# ScheduleX — Payment Retry System
 
-A production-grade **automated payment retry system** built with Spring Boot that handles failed payment transactions intelligently. When a payment fails, the system automatically schedules retry attempts at strategic intervals (6h, 24h, 72h) to maximize recovery rates.
+[![CI](https://github.com/ashishmenariaa/schedulex-payment/actions/workflows/ci.yml/badge.svg)](https://github.com/ashishmenariaa/schedulex-payment/actions/workflows/ci.yml)
 
-## 🎯 Business Problem Solved
+A Spring Boot backend that automatically retries failed payments on a schedule, driven by a custom multi-threaded job scheduler. It guarantees that an order is never charged twice, even when two retries race each other.
 
-E-commerce companies lose significant revenue due to failed payments (insufficient funds, expired cards, temporary issues). This system:
-- **Automatically retries** failed payments without manual intervention
-- **Recovers 60-70%** of initially failed transactions
-- **Reduces customer friction** - customers don't need to manually retry
-- **Tracks everything** - full audit trail of payment attempts
+**Stack:** Java 17 · Spring Boot 3.4 · Spring Data JPA / Hibernate · MySQL · JUnit 5 · Mockito · H2 (tests) · GitHub Actions · Docker
 
-## ✨ Key Features
+## The problem
 
-### Core Functionality
-- ✅ **Automated Payment Retry** - Smart retry scheduling (6h → 24h → 72h)
-- ✅ **Job Scheduling Engine** - Custom-built multi-threaded scheduler
-- ✅ **Priority Queue System** - High-priority orders processed first
-- ✅ **Transaction History** - Complete audit trail of every payment attempt
-- ✅ **Real-time Dashboard** - Monitor orders and payments live
-- ✅ **Manual Retry** - Override automatic schedule when needed
+Payments fail for temporary reasons: insufficient funds, a bank timeout, an expired card. Retrying later recovers many of them, but retry logic is easy to get wrong. A careless retry system can charge the customer twice, retry an order that was already paid, or lose scheduled retries when the server restarts. This project handles each of those cases explicitly.
 
-### Technical Highlights
-- ✅ **Multi-threaded Execution** - 10 worker threads for concurrent processing
-- ✅ **Database Polling** - Efficient job discovery mechanism
-- ✅ **Retry Logic** - Exponential backoff strategy
-- ✅ **Status Tracking** - Order and payment status management
-- ✅ **RESTful APIs** - Complete CRUD operations
+## How it works
 
-## 🏗️ Architecture
 ```
-┌─────────────┐
-│  Dashboard  │ (HTML/JS)
-└──────┬──────┘
-       │
-       ↓
-┌─────────────────────────────────────┐
-│     REST API Controllers            │
-│  /api/orders  /api/jobs             │
-└──────┬──────────────────────────────┘
-       │
-       ↓
-┌─────────────────────────────────────┐
-│     Service Layer                   │
-│  • OrderService                     │
-│  • PaymentService                   │
-│  • JobService                       │
-└──────┬──────────────────────────────┘
-       │
-       ↓
-┌─────────────────────────────────────┐
-│  Job Scheduler Engine               │
-│  ┌────────────────────────────┐    │
-│  │ JobSchedulerEngine         │    │
-│  │  - Polls DB every 5s       │    │
-│  │  - Finds due jobs          │    │
-│  └────────┬───────────────────┘    │
-│           ↓                         │
-│  ┌────────────────────────────┐    │
-│  │ JobQueueManager            │    │
-│  │  - Priority blocking queue │    │
-│  │  - FIFO + Priority based   │    │
-│  └────────┬───────────────────┘    │
-│           ↓                         │
-│  ┌────────────────────────────┐    │
-│  │ JobExecutor                │    │
-│  │  - 10 worker threads       │    │
-│  │  - Concurrent execution    │    │
-│  └────────────────────────────┘    │
-└──────┬──────────────────────────────┘
-       │
-       ↓
-┌─────────────────────────────────────┐
-│  MySQL Database                     │
-│  • orders                           │
-│  • payment_transactions             │
-│  • jobs                             │
-└─────────────────────────────────────┘
+POST /api/orders ──► OrderService.createOrder ──► charge (attempt 1)
+                                                     │
+                              success ◄──────────────┴──────────► failure
+                                 │                                   │
+                            order PAID                 retryCount++, nextRetryTime = now + backoff
+                                                       create Job("Payment Retry - ORD_x", priority 8)
+                                                                     │
+    ┌────────────────────────── ScheduleX engine ──────────────────────┴──┐
+    │ JobSchedulerEngine.pollDueJobs (every 5s)                            │
+    │   claimDueJobs(): PENDING → QUEUED in one transaction                │
+    │        ▼                                                             │
+    │ JobQueueManager: PriorityBlockingQueue (payments jump the queue)     │
+    │        ▼                                                             │
+    │ consumer thread ──► JobExecutor ──► worker pool (10 threads)         │
+    │                                       └─► OrderService.retryIfDue    │
+    └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🛠️ Tech Stack
+**Retry schedule:** attempt 1 happens immediately, attempt 2 after 6 hours, attempt 3 after 24 more hours. If all three fail, the order is cancelled. A 72-hour step is used if `maxRetries` is raised above 3.
 
-- **Backend:** Java 17, Spring Boot 3.4.12
-- **Database:** MySQL 8.x
-- **ORM:** Spring Data JPA, Hibernate
-- **Build Tool:** Maven
-- **Frontend:** HTML5, CSS3, Vanilla JavaScript
-- **Architecture:** Layered (Controller → Service → Repository)
+## Correctness guarantees (and the tests that prove them)
 
-## 📦 Database Schema
+| Guarantee | How | Test |
+|---|---|---|
+| An order is never charged twice concurrently | `@Version` optimistic lock on `Order`; the `PROCESSING` status is flushed **before** the gateway is called, so a racing request fails before charging | `concurrentRetriesOfTheSameOrderChargeOnlyOnce` |
+| A paid, in-flight or cancelled order can't be charged | `Order.isPayable()` guard → HTTP 409 | `paidOrderIsNeverChargedAgain`, `retryingPaidOrderReturns409` |
+| The same attempt is never recorded twice | Unique constraint on `(orderId, attemptNumber)` | enforced by schema |
+| A stale retry job doesn't fire early | `retryIfDue` checks `nextRetryTime` before charging | `retryJobFiringBeforeNextRetryTimeIsSkipped` |
+| A due job is queued only once | `claimDueJobs` moves jobs `PENDING → QUEUED` atomically | `claimedJobsAreNotClaimedAgain` |
+| Jobs survive a restart | On startup, jobs left `QUEUED` go back to `PENDING` | `JobService.requeueOrphanedJobs` |
 
-### Orders Table
-```sql
-- id (PK)
-- orderId (unique)
-- customerName, customerEmail, customerPhone
-- amount (DECIMAL)
-- paymentStatus (ENUM: PENDING, FAILED, SUCCESS, CANCELLED)
-- orderStatus (ENUM: CREATED, PAID, PROCESSING, SHIPPED, etc.)
-- retryCount, maxRetries
-- nextRetryTime, lastRetryTime
-- failureReason
-- createdAt, updatedAt, paidAt
-```
+There are 25 tests in total (unit, `@WebMvcTest` and `@SpringBootTest` on H2), and CI runs them on every push.
 
-### Payment Transactions Table
-```sql
-- id (PK)
-- orderId (FK)
-- amount
-- status (SUCCESS/FAILED)
-- attemptNumber
-- errorMessage
-- gatewayResponse (JSON)
-- attemptedAt
-```
+## Design decisions
 
-## 🚀 Getting Started
+- **Payment gateway behind an interface.** `PaymentGateway` is implemented by `SimulatedPaymentGateway`: the first attempt always fails, the 2nd succeeds 70% of the time, later attempts 90%. A Razorpay or Stripe client would implement the same interface with no change to the business logic. Tests mock it for deterministic results.
+- **One retry path.** Retries happen only through scheduled jobs. An earlier version also had a separate order poller, which could fire alongside the job and charge twice. It was removed.
+- **Custom scheduler instead of Quartz.** It was built to understand the internals: a producer/consumer queue, a priority ordering and a bounded thread pool. The pool size comes from `schedulex.worker.threads`, and the pool shuts down cleanly with the app.
+- **DTOs with validation.** Clients can't set server-controlled fields like `paymentStatus` or `retryCount`. Errors return a consistent JSON body (400, 404 or 409).
+- **Known trade-off.** The DB transaction stays open during the gateway call. That's fine at this scale; at higher volume I'd claim the order in a short transaction and record the result in a second one.
 
-### Prerequisites
-- Java 17+
-- MySQL 8.x
-- Maven 3.6+
+## Run it
 
-### Installation
-
-1. **Clone the repository**
+**With Docker:**
 ```bash
-git clone https://github.com/yourusername/schedulex.git
-cd schedulex
+DB_PASSWORD=secret docker compose up --build
 ```
 
-2. **Create MySQL database**
-```sql
-CREATE DATABASE schedulex_db;
-```
-
-3. **Configure database**
-
-Edit `src/main/resources/application.properties`:
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/schedulex_db
-spring.datasource.username=root
-spring.datasource.password=yourpassword
-```
-
-4. **Build and run**
+**Locally** (Java 17+, MySQL 8 running):
 ```bash
-./mvnw clean install
+cd ScheduleX
+export DB_USERNAME=root DB_PASSWORD=yourpassword   # Windows: set DB_PASSWORD=...
 ./mvnw spring-boot:run
 ```
+Open the dashboard at http://localhost:8080. The database `schedulex_db` is created automatically.
 
-5. **Access the application**
-- Dashboard: http://localhost:8080/payment-dashboard.html
-- API: http://localhost:8080/api/orders
-
-## 📡 API Endpoints
-
-### Order Management
-```
-POST   /api/orders              - Create new order
-GET    /api/orders              - Get all orders
-GET    /api/orders/{orderId}    - Get specific order
-GET    /api/orders/stats        - Get statistics
-POST   /api/orders/{orderId}/retry - Manual retry
-GET    /api/orders/{orderId}/transactions - Payment history
-```
-
-### Job Management
-```
-POST   /api/jobs                - Create job
-GET    /api/jobs                - Get all jobs
-GET    /api/jobs/{id}           - Get specific job
-GET    /api/jobs/stats          - Get job statistics
-```
-
-## 🎬 How It Works
-
-### Payment Flow
-
-1. **Order Creation**
-   - Customer places order
-   - System attempts first payment
-   - If successful → Order marked as PAID ✅
-   - If failed → Retry scheduled 🔄
-
-2. **Automatic Retry**
-```
-   Attempt 1: Immediate (at order creation)
-   Attempt 2: +6 hours later
-   Attempt 3: +24 hours later
-   Attempt 4: +72 hours later
-   
-   If all fail → Order CANCELLED ❌
-```
-
-3. **Retry Success Rate**
-   - First attempt: 40% success
-   - Second attempt: 70% success (funds may be added)
-   - Third attempt: 90% success
-
-## 📊 Sample Usage
-
-### Create Order via API
+**Tests** (no database needed):
 ```bash
-curl -X POST http://localhost:8080/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderId": "ORD_12345",
-    "customerName": "John Doe",
-    "customerEmail": "john@example.com",
-    "customerPhone": "+91-9876543210",
-    "amount": 12990.00,
-    "orderItems": "[{\"product\":\"iPhone 15 Pro\",\"qty\":1}]",
-    "maxRetries": 3
-  }'
+cd ScheduleX && ./mvnw test
 ```
 
-### Response
-```json
-{
-  "id": 1,
-  "orderId": "ORD_12345",
-  "paymentStatus": "FAILED",
-  "orderStatus": "PAYMENT_FAILED",
-  "nextRetryTime": "2025-12-20T03:00:00",
-  "retryCount": 1,
-  "failureReason": "Insufficient funds in account"
-}
+## API
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/orders` | Create order and attempt first payment (201) |
+| GET | `/api/orders` | List orders |
+| GET | `/api/orders/{orderId}` | Get order (404 if unknown) |
+| POST | `/api/orders/{orderId}/retry` | Manual retry (409 if paid, in progress or cancelled) |
+| GET | `/api/orders/{orderId}/transactions` | Payment attempt history |
+| GET | `/api/orders/stats` | Order counts by payment status |
+| POST | `/api/jobs` | Schedule a generic job |
+| GET | `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/stats` | Inspect jobs |
+
+```bash
+curl -X POST http://localhost:8080/api/orders -H "Content-Type: application/json" -d '{
+  "customerId": "CUST_1", "customerName": "Asha Verma", "customerEmail": "asha@example.com",
+  "customerPhone": "9876543210", "amount": 1299.00
+}'
 ```
 
-## 🎯 Key Design Decisions
+## Project structure
 
-1. **Why Custom Scheduler?**
-   - Learning experience - understanding job scheduling internals
-   - Full control over retry logic and timing
-   - Production systems use Quartz/Spring Scheduler (scalable alternative)
+```
+ScheduleX/src/main/java/com/schedulex
+├── controller/   REST endpoints
+├── service/      OrderService (retry rules), PaymentService (attempt recording, backoff), JobService
+├── scheduler/    JobSchedulerEngine (poller + consumer), JobQueueManager, JobExecutor
+├── gateway/      PaymentGateway interface + simulator
+├── model/        JPA entities and enums
+├── dto/          Validated request records
+├── exception/    Custom exceptions + global handler
+└── config/       Worker pool, scheduling
+```
 
-2. **Why Simulated Payments?**
-   - Easy demo without payment gateway credentials
-   - Real integration would use Razorpay/Stripe API
-   - Business logic remains the same
+## Roadmap
 
-3. **Retry Intervals (6h, 24h, 72h)**
-   - 6h: Customer might add funds same day
-   - 24h: Next business day, salary credited
-   - 72h: Final attempt after weekend/holidays
+- Razorpay integration with webhook verification
+- Email notifications on payment success or cancellation
+- Redis-backed queue so multiple instances can share work
+- Spring Security for the admin endpoints
 
-## 🔮 Future Enhancements
+## Author
 
-- [ ] Email/SMS notifications on payment status
-- [ ] Razorpay/Stripe integration
-- [ ] Redis-based distributed job queue
-- [ ] Webhook support for real-time updates
-- [ ] Admin authentication (JWT)
-- [ ] Prometheus metrics & monitoring
-- [ ] Docker containerization
-- [ ] Multi-tenant support
-
-## 🤝 Contributing
-
-This is a learning project. Feedback and suggestions welcome!
-
-## 📝 License
-
-MIT License - feel free to use for learning purposes
-
-## 👨‍💻 Author
-
-**Your Name**
-- GitHub: [@ashishmenariaa](https://github.com/ashishmenariaa)
-- linkedin: https://www.linkedin.com/in/ashish-menaria-6593511a7/
-
-
----
-
-⭐ **Star this repo if you found it helpful!**
+**Ashish Menaria**: [GitHub](https://github.com/ashishmenariaa) · [LinkedIn](https://www.linkedin.com/in/ashish-menaria-6593511a7/)

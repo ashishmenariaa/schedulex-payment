@@ -512,7 +512,7 @@
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8080/api/orders';
+        const API_URL = '/api/orders';
         let allOrders = [];
         let currentFilter = 'all';
 
@@ -699,7 +699,9 @@
                     
                     setTimeout(() => formMessage.className = 'message', 5000);
                 } else {
-                    throw new Error('Failed to create order');
+                    const err = await response.json().catch(() => ({}));
+                    const fields = err.fieldErrors ? ' (' + Object.entries(err.fieldErrors).map(([f, m]) => f + ' ' + m).join(', ') + ')' : '';
+                    throw new Error((err.message || 'Failed to create order') + fields);
                 }
             } catch (error) {
                 formMessage.className = 'message error show';
@@ -720,12 +722,14 @@
                 });
                 
                 if (response.ok) {
-                    alert('✅ Payment retry initiated!');
-                    setTimeout(() => {
-                        loadStats();
-                        loadOrders();
-                    }, 2500);
+                    const order = await response.json();
+                    alert(order.paymentStatus === 'SUCCESS' ? '✅ Payment successful!' : '⚠️ Payment failed again: ' + order.failureReason);
+                } else {
+                    const err = await response.json().catch(() => ({}));
+                    alert('❌ Retry rejected: ' + (err.message || response.status));
                 }
+                loadStats();
+                loadOrders();
             } catch (error) {
                 alert('❌ Retry failed: ' + error.message);
             }

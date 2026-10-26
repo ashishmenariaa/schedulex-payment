@@ -1,0 +1,25 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: schedulex_db
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-change-me}
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: ./ScheduleX
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/schedulex_db
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-change-me}
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy

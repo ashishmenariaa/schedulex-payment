@@ -6,7 +6,9 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "jobs")
+@Table(name = "jobs", indexes = {
+    @Index(name = "idx_jobs_status_scheduled", columnList = "status, scheduledTime")
+})
 @Data
 @NoArgsConstructor
 public class Job {

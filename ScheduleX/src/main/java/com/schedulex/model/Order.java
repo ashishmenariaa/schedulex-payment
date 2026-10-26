@@ -5,12 +5,18 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+    @Index(name = "idx_orders_status_next_retry", columnList = "paymentStatus, nextRetryTime")
+})
 public class Order {
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    
+    // Optimistic lock: two threads can't both move the same order to PROCESSING
+    @Version
+    private Long version;
     
     @Column(unique = true, nullable = false)
     private String orderId; // ORD_123456
@@ -76,6 +82,8 @@ public class Order {
     }
     
     // Getters and Setters
+    public Long getVersion() { return version; }
+    
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -138,9 +146,14 @@ public class Order {
     public LocalDateTime getPaidAt() { return paidAt; }
     public void setPaidAt(LocalDateTime paidAt) { this.paidAt = paidAt; }
     
-    // Helper method
+    // Helper methods
     public boolean canRetry() {
         return retryCount < maxRetries && 
                paymentStatus == PaymentStatus.FAILED;
+    }
+    
+    /** Only a new or failed order may be charged; paid, in-flight or cancelled orders may not. */
+    public boolean isPayable() {
+        return paymentStatus == PaymentStatus.PENDING || paymentStatus == PaymentStatus.FAILED;
     }
 }
